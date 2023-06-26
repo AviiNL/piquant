@@ -5,7 +5,6 @@ use std::time::Instant;
 
 use events::WandCastEvent;
 use ray::{raycast, Ray, RayHit};
-// use tracing::Level;
 use valence::{
     app::App,
     client::hand_swing::HandSwingEvent,
@@ -31,10 +30,6 @@ struct Projectile {
 }
 
 fn main() {
-    // tracing_subscriber::fmt()
-    //     .with_max_level(Level::DEBUG)
-    //     .init();
-
     let mut app = App::new();
     build_app(&mut app);
     app.run();
@@ -67,15 +62,12 @@ pub fn build_app(app: &mut App) {
 fn on_wand_cast(
     mut commands: Commands,
     mut clients: Query<(&Position, &Look, &Location)>,
-    // mut instances: Query<&mut Instance>,
     mut wand_cast_events: EventReader<WandCastEvent>,
 ) {
     for event in wand_cast_events.iter() {
         let Ok((pos, look, location)) = clients.get_mut(event.client) else {
             continue;
         };
-
-        // let mut instance = instances.get(location.0);
 
         let direction: Vec3 = look.vec();
 
@@ -108,12 +100,16 @@ fn update_projectile(
     mut commands: Commands,
     mut projectiles: Query<(Entity, &mut Projectile)>,
 ) {
-    let mut instance = instances.single_mut();
     for (entity, mut projectile) in projectiles.iter_mut() {
         if projectile.spawn_time.elapsed().as_secs() > 5 {
             commands.entity(entity).insert(Despawned);
             continue;
         }
+
+        let Ok(mut instance) = instances.get_mut(projectile.location.0) else {
+            log::warn!("No instance on projectile, aborting..");
+            continue;
+        };
 
         let new_pos = projectile.position + (projectile.direction * projectile.speed);
 
@@ -160,8 +156,7 @@ fn projectile_collision_detect(
             if let RayHit::Block { state, pos, offset } = hit {
                 if (state != BlockState::AIR) && (state != BlockState::CAVE_AIR) {
                     // calculate where on the block we've hit
-                    let mut hit_pos = DVec3::new(pos.x as f64, pos.y as f64, pos.z as f64);
-                    hit_pos += offset; // this direction needs to be inverted?
+                    let hit_pos = DVec3::new(pos.x as f64, pos.y as f64, pos.z as f64) + offset;
 
                     // spawn a particle at the hit position
                     instance.play_particle(
@@ -212,11 +207,10 @@ fn setup(
     mut dimensions: ResMut<DimensionTypeRegistry>,
     biomes: Res<BiomeRegistry>,
 ) {
-    // add custom dimension called "hogwarts"
     dimensions.insert(
         ident!("hogwarts"),
         DimensionType {
-            ambient_light: 2.0,
+            ambient_light: 1.0,
             has_skylight: false,
             has_ceiling: false,
             natural: false,
