@@ -8,6 +8,7 @@ use ray::{raycast, Ray, RayHit};
 use valence::{
     app::App,
     client::hand_swing::HandSwingEvent,
+    entity::{entity::NameVisible, zombie::ZombieEntityBundle, *},
     inventory::HeldItem,
     network::{async_trait, BroadcastToLan, ConnectionMode},
     prelude::*,
@@ -130,6 +131,7 @@ fn projectile_collision_detect(
     mut commands: Commands,
     mut instances: Query<&mut Instance>,
     mut projectiles: Query<(Entity, &Projectile)>,
+    entities: Query<(Entity, &Hitbox)>,
 ) {
     for (entity, projectile) in projectiles.iter_mut() {
         let Ok(mut instance) = instances.get_mut(projectile.location.0) else {
@@ -151,9 +153,27 @@ fn projectile_collision_detect(
 
         let ray = Ray::new(pos, dir, projectile.speed as f64);
 
-        let hits = raycast(ray, &instance);
+        let hits = raycast(ray, &instance, &entities);
         for hit in hits {
-            if let RayHit::Block { state, pos, offset } = hit {
+            if let RayHit::Entity {
+                entity: _,
+                position,
+            } = hit
+            {
+                // spawn a particle at the hit position
+                instance.play_particle(
+                    &Particle::Explosion,
+                    true,
+                    position,
+                    [0.0, 0.0, 0.0],
+                    0.05,
+                    1,
+                );
+
+                // despawn projectile
+                commands.entity(entity).insert(Despawned);
+                break;
+            } else if let RayHit::Block { state, pos, offset } = hit {
                 if (state != BlockState::AIR) && (state != BlockState::CAVE_AIR) {
                     // calculate where on the block we've hit
                     let hit_pos = DVec3::new(pos.x as f64, pos.y as f64, pos.z as f64) + offset;
@@ -245,7 +265,26 @@ fn setup(
         BlockState::WALL_TORCH.set(PropName::Facing, PropValue::North),
     );
 
-    commands.spawn(instance);
+    let instance_id = commands.spawn(instance).id();
+
+    // spawn a zombie
+    commands.spawn(ZombieEntityBundle {
+        location: Location(instance_id),
+        position: Position(DVec3::new(4.0, SPAWN_Y as f64 + 1.0, 1.0)),
+        look: Look::new(180.0, 0.0),
+        head_yaw: HeadYaw(135.0),
+        entity_name_visible: NameVisible(true),
+        ..Default::default()
+    });
+
+    commands.spawn(ZombieEntityBundle {
+        location: Location(instance_id),
+        position: Position(DVec3::new(-4.0, SPAWN_Y as f64 + 1.0, 1.0)),
+        look: Look::new(180.0, 0.0),
+        head_yaw: HeadYaw(225.0),
+        entity_name_visible: NameVisible(true),
+        ..Default::default()
+    });
 }
 
 fn init_clients(

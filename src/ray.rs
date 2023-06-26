@@ -1,9 +1,16 @@
-use valence::prelude::{BlockPos, BlockState, DVec3, Instance, Position};
+use bevy_ecs::{prelude::Entity, system::Query};
+use valence::{
+    aabb::Aabb,
+    prelude::{BlockPos, BlockState, DVec3, Hitbox, Instance},
+};
 
 #[allow(unused)]
 #[derive(Debug)]
 pub enum RayHit {
-    Entity(Position), // todo: add more info
+    Entity {
+        entity: Entity,
+        position: DVec3,
+    },
     Block {
         state: BlockState,
         pos: BlockPos,
@@ -32,7 +39,7 @@ impl Ray {
     }
 }
 
-pub fn raycast(ray: Ray, instance: &Instance) -> Vec<RayHit> {
+pub fn raycast(ray: Ray, instance: &Instance, entities: &Query<(Entity, &Hitbox)>) -> Vec<RayHit> {
     let mut hits = Vec::new();
 
     let mut t = 0.0;
@@ -40,6 +47,29 @@ pub fn raycast(ray: Ray, instance: &Instance) -> Vec<RayHit> {
 
     while t < ray.length {
         let pos = ray.at(t);
+
+        // check for entity hits
+        for (entity, hitbox) in entities.iter() {
+            if hitbox.get().intersects(Aabb { min: pos, max: pos }) {
+                if hits.iter().any(|hit| {
+                    if let RayHit::Entity {
+                        entity: hit_entity, ..
+                    } = hit
+                    {
+                        *hit_entity == entity
+                    } else {
+                        false
+                    }
+                }) {
+                    continue;
+                }
+
+                hits.push(RayHit::Entity {
+                    entity,
+                    position: pos,
+                });
+            }
+        }
 
         let block_pos = BlockPos::at([pos.x, pos.y, pos.z]);
 
